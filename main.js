@@ -1,9 +1,12 @@
 const {
   app, BrowserWindow, ipcMain, session, desktopCapturer,
-  systemPreferences, shell, globalShortcut, Menu
+  systemPreferences, shell, globalShortcut, Menu, dialog
 } = require('electron');
 const path = require('path');
 const control = require('./control');
+const updater = require('./updater');
+let inCall = false;
+updater.setCallChecker(() => inCall);
 
 app.setName('Audio Share');
 
@@ -100,6 +103,7 @@ function stopControl() {
 
 function registerIpc() {
   ipcMain.handle('get-platform', () => process.platform);
+  ipcMain.on('call-state', (_e, v) => { inCall = !!v; });
 
   ipcMain.handle('ask-media-access', async () => {
     if (process.platform !== 'darwin') return { camera: true, microphone: true };
@@ -172,8 +176,20 @@ function registerIpc() {
 
 function buildMenu() {
   // A minimal menu keeps copy/paste and other standard shortcuts working.
+  const checkItem = { label: 'Check for Updates…', click: () => updater.check({ silent: false }) };
+  const aboutItem = {
+    label: 'About Audio Share',
+    click: () => dialog.showMessageBox(win, { type: 'info', message: 'Audio Share', detail: 'Version ' + app.getVersion(), buttons: ['OK'] })
+  };
   const template = [
-    ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
+    ...(process.platform === 'darwin' ? [{
+      label: app.name,
+      submenu: [aboutItem, checkItem, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }]
+    }] : []),
+    {
+      label: 'File',
+      submenu: [checkItem, ...(process.platform === 'darwin' ? [] : [aboutItem]), { type: 'separator' }, process.platform === 'darwin' ? { role: 'close' } : { role: 'quit', label: 'Exit' }]
+    },
     { role: 'editMenu' },
     {
       label: 'View',
@@ -190,6 +206,7 @@ app.whenReady().then(() => {
   buildMenu();
   const first = createWindow();
   if (process.env.AUDIOSHARE_SELFTEST) require('./selftest')(first, createWindow);
+  else if (app.isPackaged) setTimeout(() => updater.check({ silent: true }), 8000);
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 

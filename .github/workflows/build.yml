@@ -3,7 +3,6 @@ name: Build installers
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -30,6 +29,7 @@ jobs:
           exit $CODE
 
   build:
+    needs: selftest
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +51,18 @@ jobs:
       - name: Install
         run: npm install
 
+      - name: Set version
+        shell: bash
+        run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version --allow-same-version
+
+      - name: Add the update key
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.UPDATE_TOKEN }}
+        run: |
+          node -e "require('fs').writeFileSync('update-token.json', JSON.stringify({ token: process.env.TOKEN || '' }))"
+          if [ -z "$TOKEN" ]; then echo "::warning title=Updates::UPDATE_TOKEN secret is not set, so this build can't update itself."; fi
+
       - name: Build installer
         run: npm run ${{ matrix.script }}
         env:
@@ -60,21 +72,34 @@ jobs:
         shell: bash
         run: |
           RES=$(find dist -type d -name resources -path "*unpacked*" -o -type d -name Resources -path "*.app/Contents/Resources" | head -1)
-          echo "resources: $RES"
-          VENDOR=$(npx --yes @electron/asar list "$RES/app.asar" | grep -c "peerjs.min.js" || true)
-          NATIVE=$(find "$RES/app.asar.unpacked" -name "*.node" 2>/dev/null | tr '\n' ' ')
-          echo "::notice title=Package check (${{ matrix.os }})::peerjs bundled=$VENDOR; native control libs: ${NATIVE:-NONE}"
-          if [ "$RUNNER_OS" = "macOS" ]; then for f in $(find dist -path "*libnut-darwin*" -name libnut.node | tr " " "?"); do echo "::notice title=Mac control lib::$(file "${f//\?/ }" | sed 's/.*: //')"; done; fi
+          LIST=$(npx --yes @electron/asar list "$RES/app.asar")
+          VENDOR=$(echo "$LIST" | grep -c "peerjs.min.js" || true)
+          KEY=$(echo "$LIST" | grep -c "update-token.json" || true)
+          NATIVE=$(find "$RES/app.asar.unpacked" -name "libnut.node" 2>/dev/null | grep -c . || true)
+          echo "::notice title=Package check (${{ matrix.os }})::peerjs=$VENDOR updatekey=$KEY controllibs=$NATIVE"
           ls -la dist
 
-      - name: Keep installer as a build download
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.os }}
           path: ${{ matrix.files }}
 
-      - name: Attach installer to the release (tags only)
-        if: startsWith(github.ref, 'refs/tags/')
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish the release the app updates from
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.files }}
+          tag_name: v1.0.${{ github.run_number }}
+          name: Audio Share 1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: |
+            dist/*.exe
+            dist/*.dmg

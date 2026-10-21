@@ -264,6 +264,7 @@ function setNet(text, warn) {
 function enterRoom() {
   if (S.joined) return;
   S.joined = true;
+  if (desktop) desktop.setInCall(true);
   setLobbyBusy(false);
   setLobbyStatus('');
   $('lobby').classList.add('hidden');
@@ -305,6 +306,7 @@ async function leaveRoom() {
   stopLocalStreams();
   if (S.peer) { try { S.peer.destroy(); } catch (_) {} }
   S.peer = null; S.joined = false; S.isHost = false; S.myId = null;
+  if (desktop) desktop.setInCall(false);
   S.local.screenInfo = null;
   $('featured').innerHTML = ''; $('gallery').innerHTML = ''; $('chatList').innerHTML = '';
   $('room').classList.add('hidden');

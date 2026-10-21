@@ -2,3 +2,4 @@ node_modules/
 dist/
 src/vendor/
 .DS_Store
+update-token.json

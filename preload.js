@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('audioShareNative', {
   getPlatform: () => ipcRenderer.invoke('get-platform'),
+  setInCall: (v) => ipcRenderer.send('call-state', !!v),
   askMediaAccess: () => ipcRenderer.invoke('ask-media-access'),
   getSources: () => ipcRenderer.invoke('get-sources'),
   prepareShare: (share) => ipcRenderer.invoke('prepare-share', share),
