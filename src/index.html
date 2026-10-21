@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' https: wss:;">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audio Share</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============ LOBBY ============ -->
+<section id="lobby" class="lobby">
+  <div class="lobby-card">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <h1>Audio Share</h1>
+    </div>
+    <p class="tagline">Hang out, talk, and play your music for friends — in studio quality.</p>
+
+    <label class="field">
+      <span>Your name</span>
+      <input id="nameInput" type="text" maxlength="30" placeholder="e.g. Jordan" autocomplete="off">
+    </label>
+
+    <button id="createBtn" class="btn btn-primary btn-big">Start a new room</button>
+
+    <div class="divider"><span>or join a friend</span></div>
+
+    <div class="join-row">
+      <input id="codeInput" type="text" maxlength="9" placeholder="Room code (ABC-123)" autocomplete="off" spellcheck="false">
+      <button id="joinBtn" class="btn btn-secondary">Join</button>
+    </div>
+
+    <p id="lobbyStatus" class="lobby-status" role="status"></p>
+  </div>
+</section>
+
+<!-- ============ ROOM ============ -->
+<section id="room" class="room hidden">
+  <header class="topbar">
+    <div class="brand small">
+      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+      <strong>Audio Share</strong>
+    </div>
+    <div class="room-code">
+      <span class="muted">Room code</span>
+      <strong id="roomCodeText">---</strong>
+      <button id="copyCodeBtn" class="btn btn-ghost btn-small" title="Copy room code">Copy</button>
+    </div>
+    <div class="topbar-right">
+      <span id="peopleCount" class="pill">1 person</span>
+      <span id="netStatus" class="pill pill-ok">Connected</span>
+      <button id="toggleChatBtn" class="btn btn-ghost btn-small">Chat</button>
+    </div>
+  </header>
+
+  <div id="controlBanner" class="control-banner hidden">
+    <span id="controlBannerText">Someone is controlling your screen</span>
+    <button id="controlBannerStop" class="btn btn-danger btn-small">Stop control</button>
+    <span class="muted hotkey-hint"></span>
+  </div>
+
+  <main class="room-main">
+    <div id="stage" class="stage">
+      <div id="featured" class="featured"></div>
+      <div id="gallery" class="gallery"></div>
+    </div>
+
+    <aside id="chatPanel" class="chat">
+      <div class="chat-head">
+        <strong>Chat</strong>
+        <span class="muted">Messages and files go straight to your friends</span>
+      </div>
+      <div id="chatList" class="chat-list"></div>
+      <div id="dropHint" class="drop-hint hidden">Drop files to send</div>
+      <form id="chatForm" class="chat-form">
+        <button type="button" id="attachBtn" class="icon-btn" title="Send a file">
+          <svg viewBox="0 0 24 24"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 01-7.8-7.8l8.6-8.6a3.7 3.7 0 015.2 5.2l-8.6 8.6a1.8 1.8 0 01-2.6-2.6L15 7.1"/></svg>
+        </button>
+        <input id="chatInput" type="text" placeholder="Type a message…" autocomplete="off">
+        <button type="submit" class="btn btn-primary btn-small">Send</button>
+        <input id="fileInput" type="file" multiple hidden>
+      </form>
+    </aside>
+  </main>
+
+  <footer class="controls">
+    <button id="micBtn" class="ctl on" title="Mute / unmute">
+      <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>
+      <span>Mic</span>
+    </button>
+    <button id="camBtn" class="ctl on" title="Camera on / off">
+      <svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/></svg>
+      <span>Camera</span>
+    </button>
+    <button id="dawBtn" class="ctl" title="Share your DAW audio">
+      <svg viewBox="0 0 24 24"><path d="M4 14v-4M8 18V6M12 15V9M16 20V4M20 14v-4"/></svg>
+      <span>Share DAW audio</span>
+    </button>
+    <button id="screenBtn" class="ctl" title="Share your screen">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+      <span>Share screen</span>
+    </button>
+    <button id="settingsBtn" class="ctl" title="Settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+      <span>Settings</span>
+    </button>
+    <button id="leaveBtn" class="ctl leave" title="Leave the room">
+      <svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l-5-5 5-5M5 12h12"/></svg>
+      <span>Leave</span>
+    </button>
+  </footer>
+</section>
+
+<!-- ============ SCREEN PICKER ============ -->
+<div id="screenModal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h2>Share your screen</h2>
+      <button class="icon-btn modal-close" data-close="screenModal" title="Close">✕</button>
+    </div>
+    <p class="muted">Pick a whole screen if you want friends to be able to control it. Windows can be shared but not controlled.</p>
+    <div id="screenHelp" class="help-box hidden"></div>
+    <h3 class="section-label">Screens</h3>
+    <div id="screenList" class="source-grid"></div>
+    <h3 class="section-label">Windows</h3>
+    <div id="windowList" class="source-grid"></div>
+  </div>
+</div>
+
+<!-- ============ DAW AUDIO ============ -->
+<div id="dawModal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>Share DAW audio</h2>
+      <button class="icon-btn modal-close" data-close="dawModal" title="Close">✕</button>
+    </div>
+    <p class="muted">Sends your music in full-quality stereo, with all voice processing turned off.</p>
+
+    <label class="field">
+      <span>Audio source</span>
+      <select id="dawSource"></select>
+    </label>
+
+    <label class="check">
+      <input id="dawMonitor" type="checkbox">
+      <span>Let me hear it too <small class="muted">(turn on if your DAW plays into a virtual cable and you can't hear it)</small></span>
+    </label>
+
+    <div class="meter-wrap">
+      <span class="muted">Level</span>
+      <div class="meter"><div id="dawMeterL" class="meter-fill"></div></div>
+      <div class="meter"><div id="dawMeterR" class="meter-fill"></div></div>
+      <span id="dawChannels" class="muted"></span>
+    </div>
+
+    <details class="help">
+      <summary>How do I send my DAW into Audio Share?</summary>
+      <div id="dawHelpBody"></div>
+    </details>
+
+    <div class="modal-actions">
+      <button id="dawStopBtn" class="btn btn-danger hidden">Stop sharing</button>
+      <button id="dawStartBtn" class="btn btn-primary">Start sharing</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SETTINGS ============ -->
+<div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>Settings</h2>
+      <button class="icon-btn modal-close" data-close="settingsModal" title="Close">✕</button>
+    </div>
+    <label class="field">
+      <span>Microphone</span>
+      <select id="micSelect"></select>
+    </label>
+    <label class="field">
+      <span>Camera</span>
+      <select id="camSelect"></select>
+    </label>
+    <label class="check">
+      <input id="voiceCleanup" type="checkbox" checked>
+      <span>Clean up my voice <small class="muted">(echo and noise reduction for your mic)</small></span>
+    </label>
+
+    <details class="help">
+      <summary>Advanced: connection relay (TURN)</summary>
+      <p class="muted">Only needed if a friend can't connect because of a strict network. Get free details from a TURN provider and paste them here. Everyone in the call should use the same settings.</p>
+      <label class="field"><span>TURN address</span><input id="turnUrl" type="text" placeholder="turn:example.com:3478" spellcheck="false"></label>
+      <label class="field"><span>Username</span><input id="turnUser" type="text" spellcheck="false"></label>
+      <label class="field"><span>Password</span><input id="turnPass" type="password"></label>
+    </details>
+
+    <div class="modal-actions">
+      <button id="settingsSaveBtn" class="btn btn-primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CONFIRM / INFO ============ -->
+<div id="confirmModal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-card narrow">
+    <h2 id="confirmTitle">Are you sure?</h2>
+    <p id="confirmBody" class="muted"></p>
+    <div class="modal-actions">
+      <button id="confirmExtra" class="btn btn-ghost hidden"></button>
+      <button id="confirmNo" class="btn btn-secondary">Cancel</button>
+      <button id="confirmYes" class="btn btn-primary">OK</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script src="vendor/peerjs.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

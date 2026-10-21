@@ -1,0 +1,70 @@
+{
+  "name": "audio-share",
+  "productName": "Audio Share",
+  "version": "1.0.0",
+  "description": "Video calls with friends: chat, file sending, high-quality DAW audio and screen sharing with remote control.",
+  "main": "main.js",
+  "author": "Audio Share",
+  "license": "MIT",
+  "scripts": {
+    "postinstall": "node scripts/copy-vendor.js",
+    "start": "electron .",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:win": "electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "@nut-tree-fork/nut-js": "^4.2.6",
+    "peerjs": "^1.5.4"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.audioshare.app",
+    "productName": "Audio Share",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "control.js",
+      "src/**/*",
+      "package.json"
+    ],
+    "npmRebuild": false,
+    "asarUnpack": [
+      "node_modules/@nut-tree-fork/**"
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] }
+      ],
+      "extendInfo": {
+        "NSCameraUsageDescription": "Audio Share uses your camera for video calls.",
+        "NSMicrophoneUsageDescription": "Audio Share uses your microphone for calls and to share your DAW audio."
+      }
+    },
+    "dmg": {
+      "artifactName": "Audio-Share-${version}-mac-${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Audio Share",
+      "artifactName": "Audio-Share-Setup-${version}.${ext}"
+    }
+  }
+}
