@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('desktop', {
+contextBridge.exposeInMainWorld('audioShareNative', {
   getPlatform: () => ipcRenderer.invoke('get-platform'),
   askMediaAccess: () => ipcRenderer.invoke('ask-media-access'),
   getSources: () => ipcRenderer.invoke('get-sources'),

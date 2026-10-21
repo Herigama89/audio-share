@@ -7,7 +7,7 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const desktop = window.desktop || null;   // provided by preload.js inside the app
+const desktop = window.audioShareNative || null;   // provided by preload.js inside the app
 
 // ---------------------------------------------------------------- constants
 const ROOM_PREFIX = 'audioshare-v1-';
