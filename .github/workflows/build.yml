@@ -10,6 +10,25 @@ permissions:
   contents: write
 
 jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Run the app's self-test
+        shell: bash
+        run: |
+          set +e
+          AUDIOSHARE_SELFTEST=1 xvfb-run -a npx electron . --no-sandbox > selftest.log 2>&1
+          CODE=$?
+          enc() { sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}'; }
+          echo "::notice title=selftest::$(grep SELFTEST selftest.log | grep -v "console\[.*\]\[0\]" | head -120 | enc)"
+          if [ $CODE -ne 0 ]; then echo "::warning title=log tail::$(tail -60 selftest.log | enc)"; fi
+          exit $CODE
+
   build:
     strategy:
       fail-fast: false

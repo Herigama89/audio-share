@@ -12,8 +12,13 @@ const sourceCache = new Map();   // desktopCapturer source id -> source
 let pendingShare = null;         // what the next getDisplayMedia() call should capture
 let controlActive = false;
 
+if (process.env.AUDIOSHARE_SELFTEST) {
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream');
+  app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
+}
+
 function createWindow() {
-  win = new BrowserWindow({
+  const w = new BrowserWindow({
     width: 1280,
     height: 820,
     minWidth: 900,
@@ -29,24 +34,25 @@ function createWindow() {
     }
   });
 
-  win.loadFile(path.join(__dirname, 'src', 'index.html'));
+  if (!win) win = w;
+  w.loadFile(path.join(__dirname, 'src', 'index.html'));
 
   // Links (e.g. in chat) open in the normal web browser, never inside the app.
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  w.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
-  win.webContents.on('will-navigate', (e, url) => {
+  w.webContents.on('will-navigate', (e, url) => {
     if (!url.startsWith('file://')) {
       e.preventDefault();
       if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     }
   });
 
-  win.on('closed', () => {
-    win = null;
-    stopControl();
+  w.on('closed', () => {
+    if (win === w) { win = null; stopControl(); }
   });
+  return w;
 }
 
 function setupSession() {
@@ -182,7 +188,8 @@ app.whenReady().then(() => {
   setupSession();
   registerIpc();
   buildMenu();
-  createWindow();
+  const first = createWindow();
+  if (process.env.AUDIOSHARE_SELFTEST) require('./selftest')(first, createWindow);
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
