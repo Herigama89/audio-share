@@ -94,13 +94,10 @@ func listApps() {
         if p.bundleID.lowercased().hasPrefix("com.audioshare") { continue }
         if p.bundleID.hasPrefix("com.apple.") && ["com.apple.audio.coreaudiod", "com.apple.controlcenter", "com.apple.systemsound"].contains(where: { p.bundleID.hasPrefix($0) }) { continue }
         let key = p.bundleID.isEmpty ? "pid:\(p.pid)" : mainBundleID(p.bundleID)
-        var name = ""
-        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: key).first, let n = app.localizedName {
-            name = n
-        } else if let app = NSRunningApplication(processIdentifier: p.pid), let n = app.localizedName {
-            name = n
-        }
-        if name.isEmpty { name = key }
+        // Only list real apps (things with a window/Dock icon), not background services.
+        var running: NSRunningApplication? = NSRunningApplication.runningApplications(withBundleIdentifier: key).first
+        if running == nil { running = NSRunningApplication(processIdentifier: p.pid) }
+        guard let app = running, app.activationPolicy != .prohibited, let name = app.localizedName, !name.isEmpty else { continue }
         var g = groups[key] ?? (name: name, bundle: key, pids: [], playing: false)
         g.pids.append(p.pid)
         g.playing = g.playing || p.playing
