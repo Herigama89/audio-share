@@ -10,7 +10,8 @@
     "postinstall": "node scripts/copy-vendor.js",
     "start": "electron .",
     "dist:mac": "electron-builder --mac --publish never",
-    "dist:win": "electron-builder --win --publish never"
+    "dist:win": "electron-builder --win --publish never",
+    "build:native:mac": "mkdir -p native/bin && swiftc -O -target arm64-apple-macos12 native/mac/daw-capture.swift -o native/bin/daw-capture-arm64 && swiftc -O -target x86_64-apple-macos12 native/mac/daw-capture.swift -o native/bin/daw-capture-x64 && lipo -create native/bin/daw-capture-arm64 native/bin/daw-capture-x64 -output native/bin/daw-capture && rm native/bin/daw-capture-arm64 native/bin/daw-capture-x64"
   },
   "dependencies": {
     "@nut-tree-fork/nut-js": "^4.2.6",
@@ -55,8 +56,15 @@
       ],
       "extendInfo": {
         "NSCameraUsageDescription": "Audio Share uses your camera for video calls.",
-        "NSMicrophoneUsageDescription": "Audio Share uses your microphone for calls and to share your DAW audio."
-      }
+        "NSMicrophoneUsageDescription": "Audio Share uses your microphone for calls and to share your DAW audio.",
+        "NSAudioCaptureUsageDescription": "Audio Share copies your DAW's sound so your friends can hear it."
+      },
+      "extraResources": [
+        {
+          "from": "native/bin/daw-capture",
+          "to": "native/daw-capture"
+        }
+      ]
     },
     "dmg": {
       "artifactName": "Audio-Share-${version}-mac-${arch}.${ext}"
@@ -68,6 +76,12 @@
           "arch": [
             "x64"
           ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "native/bin/daw-capture.exe",
+          "to": "native/daw-capture.exe"
         }
       ]
     },

@@ -51,6 +51,41 @@ jobs:
       - name: Install
         run: npm install
 
+      - name: Build the DAW capture helper (Mac)
+        if: runner.os == 'macOS'
+        run: npm run build:native:mac
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+
+      - name: Build the DAW capture helper (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          if not exist native\bin mkdir native\bin
+          cl /nologo /O2 /EHsc /std:c++17 /DUNICODE /D_UNICODE native\win\daw-capture.cpp /Fo:native\bin\daw-capture.obj /Fe:native\bin\daw-capture.exe ole32.lib mmdevapi.lib
+
+      - name: Test the DAW capture helper
+        shell: bash
+        run: |
+          set +e
+          BIN=native/bin/daw-capture; [ "$RUNNER_OS" = "Windows" ] && BIN=native/bin/daw-capture.exe
+          LIST=$("$BIN" list); CODE=$?
+          echo "::notice title=DAW helper list (${{ matrix.os }})::exit=$CODE output=$LIST"
+          [ $CODE -eq 0 ] || exit 1
+          echo "$LIST" | node -e "const j=JSON.parse(require('fs').readFileSync(0,'utf8')); if(!Array.isArray(j)&&!j.error) process.exit(1)" || exit 1
+          # Try a real capture of a process that plays sound (may not work on a build machine with no speakers).
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            afplay /System/Library/Sounds/Submarine.aiff & SND=$!; sleep 0.3
+            ( "$BIN" capture $SND > cap.raw 2> cap.err & CP=$!; sleep 2; kill $CP ) 2>/dev/null
+          else
+            WPID=$(powershell -c '$p = Start-Process powershell -ArgumentList "-c","(New-Object Media.SoundPlayer C:\Windows\Media\tada.wav).PlaySync()" -PassThru -WindowStyle Hidden; $p.Id' | tr -d '\r')
+            sleep 0.5
+            ( "$BIN" capture $WPID > cap.raw 2> cap.err & CP=$!; sleep 2; kill $CP ) 2>/dev/null
+          fi
+          echo "::notice title=DAW helper capture (${{ matrix.os }})::stderr=$(tr '\n' ' ' < cap.err) bytes=$(wc -c < cap.raw)"
+          exit 0
+
       - name: Set version
         shell: bash
         run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version --allow-same-version
@@ -76,7 +111,8 @@ jobs:
           VENDOR=$(echo "$LIST" | grep -c "peerjs.min.js" || true)
           KEY=$(echo "$LIST" | grep -c "update-token.json" || true)
           NATIVE=$(find "$RES/app.asar.unpacked" -name "libnut.node" 2>/dev/null | grep -c . || true)
-          echo "::notice title=Package check (${{ matrix.os }})::peerjs=$VENDOR updatekey=$KEY controllibs=$NATIVE"
+          HELPER=$(ls "$RES/native" 2>/dev/null | tr '\n' ' ')
+          echo "::notice title=Package check (${{ matrix.os }})::peerjs=$VENDOR updatekey=$KEY controllibs=$NATIVE helper=$HELPER"
           ls -la dist
 
       - uses: actions/upload-artifact@v4

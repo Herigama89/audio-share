@@ -3,3 +3,5 @@ dist/
 src/vendor/
 .DS_Store
 update-token.json
+native/bin/
+*.obj

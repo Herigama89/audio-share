@@ -13,5 +13,10 @@ contextBridge.exposeInMainWorld('audioShareNative', {
   controlEvent: (ev) => ipcRenderer.send('control-event', ev),
   onControlHotkeyStop: (fn) => ipcRenderer.on('control-hotkey-stop', () => fn()),
   openPrivacySettings: (which) => ipcRenderer.invoke('open-privacy-settings', which),
-  openExternal: (url) => ipcRenderer.invoke('open-external', url)
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  dawApps: () => ipcRenderer.invoke('daw-apps'),
+  dawCaptureStart: (pids) => ipcRenderer.invoke('daw-capture-start', pids),
+  dawCaptureStop: () => ipcRenderer.invoke('daw-capture-stop'),
+  onDawPcm: (fn) => ipcRenderer.on('daw-pcm', (_e, data) => fn(data)),
+  onDawCaptureEnded: (fn) => ipcRenderer.on('daw-capture-ended', (_e, msg) => fn(msg))
 });

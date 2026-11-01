@@ -3,6 +3,8 @@ const {
   systemPreferences, shell, globalShortcut, Menu, dialog
 } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const { spawn, execFile } = require('child_process');
 const control = require('./control');
 const updater = require('./updater');
 let inCall = false;
@@ -174,6 +176,88 @@ function registerIpc() {
   });
 }
 
+// ---------------------------------------------------------------- DAW app capture
+// A small native helper (native/mac or native/win) copies one app's sound and
+// streams raw float32 stereo PCM to us; we forward it to the window.
+function captureHelperPath() {
+  const name = process.platform === 'win32' ? 'daw-capture.exe' : 'daw-capture';
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'native', name)
+    : path.join(__dirname, 'native', 'bin', name);
+}
+
+let capChild = null;
+
+function stopAppCapture() {
+  const c = capChild;
+  capChild = null;
+  if (!c) return;
+  try { c.stdin.end(); } catch (_) {}
+  setTimeout(() => { try { c.kill(); } catch (_) {} }, 600);
+}
+
+function registerCaptureIpc() {
+  ipcMain.handle('daw-apps', () => new Promise((resolve) => {
+    const bin = captureHelperPath();
+    if (!['darwin', 'win32'].includes(process.platform) || !fs.existsSync(bin)) {
+      return resolve({ ok: false, reason: 'unsupported' });
+    }
+    execFile(bin, ['list'], { timeout: 8000, windowsHide: true }, (err, stdout, stderr) => {
+      try {
+        const j = JSON.parse(String(stdout).trim() || 'null');
+        if (Array.isArray(j)) return resolve({ ok: true, apps: j });
+        if (j && j.error) return resolve({ ok: false, reason: j.error });
+      } catch (_) {}
+      resolve({ ok: false, reason: 'failed', detail: String(stderr || (err && err.message) || '').slice(0, 300) });
+    });
+  }));
+
+  ipcMain.handle('daw-capture-start', (e, pids) => new Promise((resolve) => {
+    stopAppCapture();
+    const wc = e.sender;
+    const list = (Array.isArray(pids) ? pids : [pids]).map(n => String(parseInt(n, 10))).filter(n => n !== 'NaN');
+    const args = process.platform === 'win32' ? ['capture', list[0]] : ['capture', ...list];
+    let child;
+    try {
+      child = spawn(captureHelperPath(), args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    } catch (err) {
+      return resolve({ ok: false, detail: String(err.message || err) });
+    }
+    capChild = child;
+    let settled = false;
+    let errText = '';
+    let leftover = null;
+    const finish = (v) => { if (!settled) { settled = true; resolve(v); } };
+
+    child.stderr.on('data', (d) => {
+      errText = (errText + d).slice(-4000);
+      const m = errText.match(/FORMAT (\{[^\n]*\})/);
+      if (m) { try { finish({ ok: true, format: JSON.parse(m[1]) }); } catch (_) {} }
+    });
+    child.stdout.on('data', (buf) => {
+      if (capChild !== child || wc.isDestroyed()) return;
+      if (leftover) { buf = Buffer.concat([leftover, buf]); leftover = null; }
+      const usable = buf.length - (buf.length % 8);     // whole stereo float frames only
+      if (usable < buf.length) leftover = buf.subarray(usable);
+      if (usable > 0) wc.send('daw-pcm', buf.subarray(0, usable));
+    });
+    child.on('error', (err) => finish({ ok: false, detail: String(err.message || err) }));
+    child.on('exit', (code) => {
+      const msg = (errText.match(/ERROR ([^\n]*)/) || [])[1] || (code ? 'stopped (' + code + ')' : '');
+      finish({ ok: false, detail: msg || 'stopped' });
+      if (capChild === child) {
+        capChild = null;
+        if (!wc.isDestroyed()) wc.send('daw-capture-ended', msg);
+      }
+    });
+    setTimeout(() => {
+      if (!settled) { finish({ ok: false, detail: 'timed out' }); if (capChild === child) stopAppCapture(); }
+    }, 12000);
+  }));
+
+  ipcMain.handle('daw-capture-stop', () => { stopAppCapture(); return true; });
+}
+
 function buildMenu() {
   // A minimal menu keeps copy/paste and other standard shortcuts working.
   const checkItem = { label: 'Check for Updates…', click: () => updater.check({ silent: false }) };
@@ -203,6 +287,7 @@ function buildMenu() {
 app.whenReady().then(() => {
   setupSession();
   registerIpc();
+  registerCaptureIpc();
   buildMenu();
   const first = createWindow();
   if (process.env.AUDIOSHARE_SELFTEST) require('./selftest')(first, createWindow);
@@ -211,6 +296,7 @@ app.whenReady().then(() => {
 });
 
 app.on('will-quit', () => {
+  stopAppCapture();
   stopControl();
   globalShortcut.unregisterAll();
 });

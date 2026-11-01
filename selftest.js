@@ -42,6 +42,10 @@ module.exports = async function selftest(first, createWindow) {
     check('PeerJS loaded', await js(a, 'typeof window.Peer === "function"'), await js(a, 'typeof window.Peer + " / " + typeof window.peerjs'));
     log('lobby status at start:', await js(a, 'document.getElementById("lobbyStatus").textContent'));
 
+    const wk = await js(a, 'selfTestWorklet().catch(e => ({ error: String(e && e.message || e) }))');
+    check('DAW audio player works', wk && !wk.error && wk.peak > 0.2 && wk.tracks === 1, JSON.stringify(wk));
+    check('one-click DAW button falls back to the picker without a helper', await js(a, 'loadDawApps().then(r => r.ok === false)'));
+
     await js(a, 'document.getElementById("nameInput").value = "Alice"; document.getElementById("createBtn").click();');
     const entered = await waitFor(a, '!document.getElementById("room").classList.contains("hidden")', 30000);
     check('Alice created a room', entered, 'status: ' + await js(a, 'document.getElementById("lobbyStatus").textContent'));

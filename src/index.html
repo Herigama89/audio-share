@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' https: wss:;">
+        content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' https: wss:;">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Audio Share</title>
   <link rel="stylesheet" href="styles.css">
@@ -141,12 +141,16 @@
     </div>
     <p class="muted">Sends your music in full-quality stereo, with all voice processing turned off.</p>
 
-    <label class="field">
-      <span>Audio source</span>
-      <select id="dawSource"></select>
-    </label>
+    <div class="field">
+      <span>What to share</span>
+      <div class="join-row">
+        <select id="dawSource"></select>
+        <button id="dawRefreshBtn" class="btn btn-secondary btn-small" type="button">Refresh</button>
+      </div>
+    </div>
+    <p id="dawNote" class="help-box hidden"></p>
 
-    <label class="check">
+    <label class="check" id="dawMonitorRow">
       <input id="dawMonitor" type="checkbox">
       <span>Let me hear it too <small class="muted">(turn on if your DAW plays into a virtual cable and you can't hear it)</small></span>
     </label>
@@ -159,7 +163,7 @@
     </div>
 
     <details class="help">
-      <summary>How do I send my DAW into Audio Share?</summary>
+      <summary>Help: getting your DAW’s sound</summary>
       <div id="dawHelpBody"></div>
     </details>
 
@@ -220,6 +224,7 @@
 <div id="toasts" class="toasts" aria-live="polite"></div>
 
 <script src="vendor/peerjs.min.js"></script>
+<script src="daw-worklet.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

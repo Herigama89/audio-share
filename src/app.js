@@ -588,7 +588,7 @@ function ensureLocalTile() {
   t.querySelector('.avatar').classList.toggle('hidden', S.camOn && S.hasVideo);
   renderLabel(t, {
     name: S.myName + ' (you)', mic: S.micOn,
-    daw: S.local.daw ? 'Sharing DAW audio' : null,
+    daw: S.local.daw ? 'Sharing ' + (S.local.dawLabel || 'DAW audio') : null,
   });
   if (S.local.cam && S.local.cam.getAudioTracks().length) startSpeakingMonitor('me', S.local.cam, t);
   layoutStage();
@@ -740,7 +740,7 @@ function stopSpeakingMonitor(key) {
 function wireRoomUi() {
   $('micBtn').onclick = toggleMic;
   $('camBtn').onclick = toggleCam;
-  $('dawBtn').onclick = openDawModal;
+  $('dawBtn').onclick = onDawButton;
   $('screenBtn').onclick = () => (S.local.screen ? stopScreenShare() : openScreenPicker());
   $('settingsBtn').onclick = openSettings;
   $('leaveBtn').onclick = async () => {
@@ -787,16 +787,17 @@ function wireRoomUi() {
   window.addEventListener('drop', e => e.preventDefault());
 
   // DAW modal
-  $('dawStartBtn').onclick = startDawShare;
+  $('dawStartBtn').onclick = () => startDawShare();
+  $('dawRefreshBtn').onclick = () => openDawModal();
   $('dawStopBtn').onclick = () => { stopDawShare(); };
   $('dawMonitor').onchange = () => {
     S.settings.dawMonitor = $('dawMonitor').checked; saveSettings();
     if (S.local.dawRaw) S.settings.dawMonitor ? startDawMonitor() : stopDawMonitor();
   };
   $('dawSource').onchange = () => {
-    const isLoop = $('dawSource').value === LOOPBACK_ID;
-    $('dawMonitor').disabled = isLoop;
-    if (isLoop) $('dawMonitor').checked = false;
+    const v = $('dawSource').value;
+    const isDevice = v !== LOOPBACK_ID && !v.startsWith(APP_PREFIX);
+    $('dawMonitorRow').classList.toggle('hidden', !isDevice);
   };
 
   // Settings
@@ -812,6 +813,7 @@ function updateButtons() {
   cam.querySelector('span').textContent = !S.hasVideo ? 'No camera' : (S.camOn ? 'Stop video' : 'Start video');
   daw.classList.toggle('live', !!S.local.daw);
   daw.querySelector('span').textContent = S.local.daw ? 'DAW is live' : 'Share DAW audio';
+  daw.title = S.local.daw ? 'Change or stop the DAW audio' : 'Share your DAW’s sound with everyone';
   scr.classList.toggle('live', !!S.local.screen);
   scr.querySelector('span').textContent = S.local.screen ? 'Stop sharing' : 'Share screen';
 }
@@ -1187,16 +1189,92 @@ function stopControlling(notify) {
 }
 
 // ---------------------------------------------------------------- DAW audio
-async function openDawModal() {
-  const extra = isWin() ? [[LOOPBACK_ID, 'Whole computer sound (everything you hear)']] : null;
-  await fillDeviceSelect($('dawSource'), 'audioinput', S.settings.dawSource, extra);
-  // Put a likely virtual cable first if nothing was chosen before.
-  if (!S.settings.dawSource) {
-    const guess = [...$('dawSource').options].find(o => /blackhole|vb-?audio|cable output|voicemeeter|loopback|soundflower/i.test(o.textContent));
-    if (guess) $('dawSource').value = guess.value;
+// Two ways to get the music:
+//  * "app" sources: Audio Share copies one program's sound directly (no driver).
+//  * device sources: an audio input such as an interface or a virtual cable.
+const DAW_NAMES = /logic|ableton|\blive\b|fl ?studio|^fl(64)?$|pro ?tools|cubase|nuendo|studio ?one|reaper|bitwig|garageband|reason|cakewalk|ardour|\bluna\b|maschine|audacity|serato|traktor|mainstage|waveform|renoise|digital performer|mixcraft|samplitude|sonar|tracktion|ableton/i;
+const APP_PREFIX = 'app:';
+let dawApps = [];            // last list of programs that use audio
+let appCapture = null;       // { ctx, node } while capturing a program
+let workletUrl = '';
+
+function isDawName(name) { return DAW_NAMES.test(name || ''); }
+
+async function loadDawApps() {
+  dawApps = [];
+  if (!desktop || !desktop.dawApps) return { ok: false, reason: 'unsupported' };
+  let res;
+  try { res = await desktop.dawApps(); } catch (_) { return { ok: false, reason: 'failed' }; }
+  if (res && res.ok) {
+    dawApps = res.apps
+      .filter(a => a && a.name && !/^audio share/i.test(a.name))
+      .sort((a, b) => (isDawName(b.name) - isDawName(a.name)) || (b.playing - a.playing) || a.name.localeCompare(b.name));
   }
+  return res || { ok: false };
+}
+
+// Which program to share automatically: the one used last time, else the DAW that's open.
+function pickDawApp() {
+  const last = S.settings.dawSource && S.settings.dawSource.startsWith(APP_PREFIX) ? S.settings.dawSource.slice(APP_PREFIX.length) : '';
+  const lastApp = last && dawApps.find(a => a.id === last);
+  if (lastApp) return lastApp;
+  const daws = dawApps.filter(a => isDawName(a.name));
+  return daws.find(a => a.playing) || daws[0] || null;
+}
+
+// The "Share DAW audio" button: one click shares your DAW if one is open.
+async function onDawButton() {
+  if (S.local.daw) { openDawModal(); return; }
+  const btn = $('dawBtn');
+  btn.disabled = true;
+  try {
+    const res = await loadDawApps();
+    const app = res.ok ? pickDawApp() : null;
+    if (app) {
+      const ok = await startDawShare({ kind: 'app', app });
+      if (ok) return;
+    }
+  } finally { btn.disabled = false; }
+  openDawModal(true);
+}
+
+async function openDawModal(noDawFound) {
+  const select = $('dawSource');
+  const res = await loadDawApps();
+  const extra = isWin() ? [[LOOPBACK_ID, 'Whole computer sound (everything you hear)']] : null;
+  await fillDeviceSelect(select, 'audioinput', '', extra);
+
+  // Put programs first, in their own group.
+  const devGroup = document.createElement('optgroup');
+  devGroup.label = 'Audio inputs (interfaces, virtual cables)';
+  [...select.options].forEach(o => devGroup.appendChild(o));
+  select.textContent = '';
+  if (dawApps.length) {
+    const appGroup = document.createElement('optgroup');
+    appGroup.label = 'Programs — shares just that app’s sound';
+    for (const a of dawApps) {
+      const o = document.createElement('option');
+      o.value = APP_PREFIX + a.id;
+      o.textContent = a.name + (a.playing ? '  ♪ playing' : '') + (isDawName(a.name) ? '  (DAW)' : '');
+      appGroup.appendChild(o);
+    }
+    select.appendChild(appGroup);
+  }
+  select.appendChild(devGroup);
+
+  const preferred = S.local.daw ? S.local.dawChoice : (pickDawApp() ? APP_PREFIX + pickDawApp().id : S.settings.dawSource);
+  if (preferred && [...select.options].some(o => o.value === preferred)) select.value = preferred;
+  else if (dawApps.length) select.value = APP_PREFIX + dawApps[0].id;
+
+  const note = $('dawNote');
+  note.textContent = '';
+  if (res.ok && !dawApps.length) note.textContent = 'No programs are playing sound right now. Open your DAW and press play, then click Refresh.';
+  else if (noDawFound && res.ok) note.textContent = 'Couldn’t spot your DAW automatically — pick it from the list.';
+  else if (res.reason === 'needs-macos-14.2') note.textContent = 'Sharing a program directly needs macOS 14.2 or newer. Update macOS, or use an audio input below.';
+  note.classList.toggle('hidden', !note.textContent);
+
   $('dawMonitor').checked = !!S.settings.dawMonitor;
-  $('dawSource').onchange();
+  select.onchange();
   renderDawHelp();
   syncDawModalButtons();
   openModal('dawModal');
@@ -1211,30 +1289,101 @@ function syncDawModalButtons() {
 function renderDawHelp() {
   const body = $('dawHelpBody');
   body.textContent = '';
-  const steps = isMac() ? [
-    'Install the free “BlackHole 2ch” virtual audio cable (existential.audio/blackhole).',
-    'In your DAW’s audio settings, set the output device to “BlackHole 2ch”.',
-    'Here, pick “BlackHole 2ch” as the audio source and turn on “Let me hear it too”.',
-    'Press Start sharing. Wear headphones so your mic doesn’t pick up the music.',
-  ] : [
-    'Easiest: pick “Whole computer sound”. Friends hear everything your computer plays — including their own voices coming back to them, so ask them to mute you when they talk, or use the cable below.',
-    'Best quality: install the free “VB-CABLE” (vb-audio.com/Cable). In your DAW, set the output to “CABLE Input”.',
-    'Here, pick “CABLE Output” as the audio source and turn on “Let me hear it too”.',
-    'Press Start sharing. Wear headphones so your mic doesn’t pick up the music.',
-  ];
-  const ol = document.createElement('ol');
-  steps.forEach(s => { const li = document.createElement('li'); li.textContent = s; ol.appendChild(li); });
-  const note = document.createElement('p');
-  note.className = 'muted';
-  note.textContent = 'Using an audio interface? You can also pick its input directly — for example a loopback channel some interfaces offer.';
-  body.append(ol, note);
+  const add = (tag, text, cls) => { const el = document.createElement(tag); el.textContent = text; if (cls) el.className = cls; body.appendChild(el); return el; };
+  add('p', 'Easiest: open your DAW, then click “Share DAW audio”. Audio Share finds it and sends just its sound — nothing to install, and you keep hearing it normally.');
+  if (isMac()) {
+    add('p', 'First time on a Mac: allow Audio Share to record app audio when asked. If friends hear nothing, open System Settings → Privacy & Security → Screen & System Audio Recording, and turn on Audio Share under “System Audio Recording Only”. Then quit and reopen Audio Share.', 'muted');
+  } else if (isWin()) {
+    add('p', 'If your DAW isn’t in the list: it’s probably using an ASIO driver, which Windows can’t copy from. In your DAW’s audio settings, switch the driver to WASAPI (or “Windows Audio”) while you share, then click Refresh.', 'muted');
+  }
+  add('p', 'Prefer an audio interface or a virtual cable? Pick it under “Audio inputs” and turn on “Let me hear it too” if you can’t hear it.', 'muted');
+  add('p', 'Wear headphones so your mic doesn’t pick up the music.', 'muted');
 }
 
-async function startDawShare() {
-  const choice = $('dawSource').value;
+function sourceFromSelect() {
+  const v = $('dawSource').value;
+  if (v.startsWith(APP_PREFIX)) {
+    const app = dawApps.find(a => APP_PREFIX + a.id === v);
+    return app ? { kind: 'app', app } : null;
+  }
+  if (v === LOOPBACK_ID) return { kind: 'loopback' };
+  return { kind: 'device', deviceId: v };
+}
+
+// Used by the automatic self-test: plays a test tone through the same path as app capture.
+async function selfTestWorklet() {
+  const ctx = new AudioContext({ sampleRate: 48000 });
+  if (!workletUrl) workletUrl = URL.createObjectURL(new Blob([window.DAW_WORKLET_SRC], { type: 'application/javascript' }));
+  await ctx.audioWorklet.addModule(workletUrl);
+  const node = new AudioWorkletNode(ctx, 'pcm-player', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+  const an = ctx.createAnalyser(); node.connect(an);
+  const dest = ctx.createMediaStreamDestination(); node.connect(dest);
+  await ctx.resume().catch(() => {});
+  let t = 0;
+  const feed = setInterval(() => {
+    const f = new Float32Array(960 * 2);
+    for (let i = 0; i < 960; i++) { const v = 0.5 * Math.sin(2 * Math.PI * 440 * (t++) / 48000); f[2 * i] = v; f[2 * i + 1] = v; }
+    node.port.postMessage(f, [f.buffer]);
+  }, 20);
+  await sleep(800);
+  const buf = new Float32Array(an.fftSize); an.getFloatTimeDomainData(buf);
+  let peak = 0; for (const v of buf) peak = Math.max(peak, Math.abs(v));
+  clearInterval(feed); ctx.close();
+  return { peak, tracks: dest.stream.getAudioTracks().length };
+}
+
+async function startAppCaptureStream(app) {
+  const res = await desktop.dawCaptureStart(app.pids);
+  if (!res || !res.ok) throw new Error((res && res.detail) || 'could not capture that app');
+  const ctx = new AudioContext({ sampleRate: res.format.rate || 48000, latencyHint: 'interactive' });
+  if (!workletUrl) workletUrl = URL.createObjectURL(new Blob([window.DAW_WORKLET_SRC], { type: 'application/javascript' }));
+  await ctx.audioWorklet.addModule(workletUrl);
+  const node = new AudioWorkletNode(ctx, 'pcm-player', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+  const dest = ctx.createMediaStreamDestination();
+  dest.channelCount = 2;
+  node.connect(dest);
+  await ctx.resume().catch(() => {});
+  appCapture = { ctx, node };
+  return dest.stream;
+}
+
+function stopAppCaptureStream() {
+  if (!appCapture) return;
+  const c = appCapture;
+  appCapture = null;
+  try { desktop.dawCaptureStop(); } catch (_) {}
+  try { c.node.disconnect(); } catch (_) {}
+  c.ctx.close().catch(() => {});
+}
+
+if (desktop && desktop.onDawPcm) {
+  desktop.onDawPcm((data) => {
+    if (!appCapture) return;
+    const u8 = data instanceof Uint8Array ? data : new Uint8Array(data);
+    const f = new Float32Array(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength));
+    appCapture.node.port.postMessage(f, [f.buffer]);
+  });
+  desktop.onDawCaptureEnded((msg) => {
+    if (!appCapture) return;
+    stopDawShare();
+    toast('DAW audio stopped — ' + (msg || 'the program closed') + '.', 'error');
+  });
+}
+
+// Returns true when sharing started.
+async function startDawShare(source) {
+  if (!source || source instanceof Event) source = sourceFromSelect();
+  if (!source) { toast('Pick something to share.', 'error'); return false; }
+  const choice = source.kind === 'app' ? APP_PREFIX + source.app.id : source.kind === 'loopback' ? LOOPBACK_ID : source.deviceId;
+
+  // Switching sources while live: stop the old one first.
+  if (S.local.daw) stopDawShare(true);
+
   let stream = null;
   try {
-    if (choice === LOOPBACK_ID) {
+    if (source.kind === 'app') {
+      stream = await startAppCaptureStream(source.app);
+    } else if (source.kind === 'loopback') {
       await desktop.prepareShare({ mode: 'loopback' });
       const s = await navigator.mediaDevices.getDisplayMedia({
         video: true,
@@ -1246,7 +1395,7 @@ async function startDawShare() {
     } else {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          deviceId: choice ? { exact: choice } : undefined,
+          deviceId: source.deviceId ? { exact: source.deviceId } : undefined,
           echoCancellation: false, noiseSuppression: false, autoGainControl: false,
           channelCount: { ideal: 2 }, sampleRate: { ideal: 48000 }, sampleSize: { ideal: 24 },
           latency: { ideal: 0.01 },
@@ -1255,34 +1404,39 @@ async function startDawShare() {
     }
   } catch (err) {
     console.warn('[daw]', err);
-    toast('Couldn’t open that audio source.', 'error');
-    return;
+    stopAppCaptureStream();
+    if (S.local.daw === null) { updateButtons(); ensureLocalTile(); syncDawModalButtons(); stopDawMeter(); }
+    toast('Couldn’t share ' + (source.kind === 'app' ? source.app.name : 'that audio source') + (err && err.message ? ': ' + err.message : '.'), 'error');
+    return false;
   }
   const track = stream.getAudioTracks()[0];
   try { track.contentHint = 'music'; } catch (_) {}
 
-  // Switching sources while live: stop the old one first.
-  if (S.local.daw) stopDawShare(true);
-
   S.settings.dawSource = choice; saveSettings();
   S.local.dawRaw = stream;
   S.local.daw = stream;
+  S.local.dawChoice = choice;
+  S.local.dawLabel = source.kind === 'app' ? source.app.name : 'DAW audio';
   track.onended = () => { if (S.local.daw === stream) { stopDawShare(); toast('DAW audio stopped — the audio source went away.', 'error'); } };
 
-  const ch = track.getSettings().channelCount;
-  $('dawChannels').textContent = ch ? (ch >= 2 ? 'Stereo' : 'Mono') + ' · 48 kHz · up to 510 kbps' : '';
+  $('dawChannels').textContent = source.kind === 'app'
+    ? 'Stereo · ' + Math.round((appCapture ? appCapture.ctx.sampleRate : 48000) / 1000 * 10) / 10 + ' kHz · up to 510 kbps · ' + source.app.name
+    : ((track.getSettings().channelCount || 2) >= 2 ? 'Stereo' : 'Mono') + ' · 48 kHz · up to 510 kbps';
   startDawMeter(stream);
-  if (S.settings.dawMonitor && choice !== LOOPBACK_ID) startDawMonitor();
+  if (S.settings.dawMonitor && source.kind === 'device') startDawMonitor();
 
   for (const p of S.peers.values()) callPeer(p, 'daw');
   updateButtons(); ensureLocalTile(); syncDawModalButtons();
-  toast('Your DAW audio is live.');
+  toast(source.kind === 'app' ? 'Sharing ' + source.app.name + ' with everyone.' : 'Your DAW audio is live.');
+  return true;
 }
 
 function stopDawShare(switching) {
   if (!S.local.daw) return;
   stopSharing('daw');
+  stopAppCaptureStream();
   S.local.dawRaw = null;
+  S.local.dawChoice = '';
   stopDawMonitor();
   if (!switching) {
     stopDawMeter();

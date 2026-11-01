@@ -41,7 +41,7 @@ else
   sudo codesign --force --deep --sign - "$APP" 2>&1 | tail -1
   codesign --verify --deep "$APP" 2>/dev/null && echo "   Signature OK" || echo "   !! Signature check failed - send me this output"
   echo "== Resetting permissions"
-  for s in Camera Microphone ScreenCapture Accessibility; do tccutil reset "$s" "$ID" >/dev/null 2>&1; done
+  for s in Camera Microphone ScreenCapture AudioCapture Accessibility; do tccutil reset "$s" "$ID" >/dev/null 2>&1; done
   echo "== Opening Audio Share"
   open "$APP" || echo "!! Still can't open - send me everything shown above"
   echo ""
